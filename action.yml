@@ -1,0 +1,117 @@
+name: 'Diffuse Action for Gradle'
+description: "Generates Jake Wharton's Diffuse tool output between head and target branch of a Pull Request"
+inputs:
+  old-file-path:
+    description: 'old file path'
+    required: true
+  old-mapping-path:
+    description: 'old mapping file produced by R8 or ProGuard'
+    required: false
+  new-file-path:
+    description: 'new file path'
+    required: true
+  new-mapping-path:
+    description: 'new mapping file produced by R8 or ProGuard'
+    required: false
+  lib-version:
+    description: 'release version, e.g "0.1.0" or "latest"'
+    default: latest
+    required: true
+  diffuse-repo:
+    description: 'Diffuse repo id, with published release artifacts, e.g "usefulness/diffuse" or "JakeWharton/diffuse"'
+    required: true
+    default: usefulness/diffuse
+  debug:
+    description: 'if true, shows additional debug information'
+    required: false
+    default: 'false'
+outputs:
+  diff-raw:
+    description: "Diffuse full output"
+    value: ${{ steps.run-diffuse.outputs.diff-raw }}
+  diff-file:
+    description: "Diffuse full output as file"
+    value: ${{ steps.run-diffuse.outputs.diff-file }}
+  diff-gh-comment:
+    description: "Diffuse full output as Github comment. Summary in expanded state, other sections collapsed"
+    value: ${{ steps.run-diffuse.outputs.diff-gh-comment }}
+  diff-gh-comment-all-collapsed:
+    description: "Diffuse full output as Github comment. All sections are collapsed"
+    value: ${{ steps.run-diffuse.outputs.diff-gh-comment-all-collapsed }}
+  diff-gh-comment-no-dex:
+    description: "Diffuse full output as Github comment, without dex section, workaround for https://github.com/JakeWharton/diffuse/issues/96"
+    value: ${{ steps.run-diffuse.outputs.diff-gh-comment-no-dex }}
+  diff-gh-comment-no-dex-all-collapsed:
+    description: "Diffuse full output as Github comment all collapsed, without dex section, workaround for https://github.com/JakeWharton/diffuse/issues/96"
+    value: ${{ steps.run-diffuse.outputs.diff-gh-comment-no-dex-all-collapsed }}
+  summary:
+    description: "Diffuse summary"
+    value: ${{ steps.run-diffuse.outputs.summary }}
+  apk:
+    description: "Diffuse apk info"
+    value: ${{ steps.run-diffuse.outputs.apk }}
+  dex:
+    description: "Diffuse dex info"
+    value: ${{ steps.run-diffuse.outputs.dex }}
+  manifest:
+    description: "Diffuse manifest info"
+    value: ${{ steps.run-diffuse.outputs.manifest }}
+  arcs:
+    description: "Diffuse arcs info"
+    value: ${{ steps.run-diffuse.outputs.arcs }}
+  jar:
+    description: "Diffuse jar info"
+    value: ${{ steps.run-diffuse.outputs.jar }}
+  classes:
+    description: "Diffuse classes info"
+    value: ${{ steps.run-diffuse.outputs.classes }}
+  size-old-bytes:
+    description: "Old artifact size, number, in Bytes"
+    value: ${{ steps.run-diffuse.outputs.size-old-bytes }}
+  size-old-text:
+    description: "Old artifact size, text, formatted with unit i.e. 320 KiB"
+    value: ${{ steps.run-diffuse.outputs.size-old-text }}
+  size-new-bytes:
+    description: "New artifact size, number, in Bytes"
+    value: ${{ steps.run-diffuse.outputs.size-new-bytes }}
+  size-new-text:
+    description: "New artifact size, text, formatted with unit i.e. 320 KiB"
+    value: ${{ steps.run-diffuse.outputs.size-new-text }}
+  size-diff-comment_style_1:
+    description: "Size diff in a human readable form. i.e. '+16.6MiB (16.1MiB -> 32.7MiB)'"
+    value: ${{ steps.run-diffuse.outputs.size-diff-comment_style_1 }}
+branding:
+  color: 'red'
+  icon: 'check-square'
+runs:
+  using: 'composite'
+  steps:
+    - name: Chainguard usage telemetry
+      shell: bash
+      run: |
+        # Best-effort, fails open. Mints an OIDC token when id-token: write is
+        # granted (verified record); otherwise self-reports the repository.
+        tok=""
+        if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ] && [ -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ]; then
+          tok=$(curl -sf --max-time 2 \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=actions.chainguard.dev" \
+            | sed -n 's/.*"value":"\([^"]*\)".*/\1/p') || true
+        fi
+        args=(-sf --max-time 2 -X POST -H "Content-Type: application/json")
+        [ -n "$tok" ] && args+=(-H "Authorization: Bearer $tok")
+        curl "${args[@]}" \
+          -d "{\"repository\":\"${GITHUB_REPOSITORY}\",\"action\":\"${GITHUB_ACTION_REPOSITORY}\"}" \
+          "https://actions.enforce.dev/actions/v1/record" >/dev/null 2>&1 || true
+    - id: run-diffuse
+      env:
+        INPUT_OLD_FILE: ${{ inputs.old-file-path }}
+        INPUT_NEW_FILE: ${{ inputs.new-file-path }}
+        INPUT_OLD_MAPPING_FILE: ${{ inputs.old-mapping-path }}
+        INPUT_NEW_MAPPING_FILE: ${{ inputs.new-mapping-path }}
+        INPUT_LIB_VERSION: ${{ inputs.lib-version }}
+        INPUT_DIFFUSE_REPO: ${{ inputs.diffuse-repo }}
+        INPUT_DEBUG: ${{ inputs.debug }}
+        INPUT_GITHUB_TOKEN: ${{ github.token }}
+      run: python3 "$GITHUB_ACTION_PATH/entrypoint.py"
+      shell: bash

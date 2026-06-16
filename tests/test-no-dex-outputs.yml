@@ -1,0 +1,121 @@
+name: Test no-dex outputs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q default-jdk wget python3 python3-pip python3-requests || true
+          python3 -m pip install --quiet requests 2>/dev/null || \
+            pip3 install --break-system-packages --quiet requests 2>/dev/null || true
+          python3 -c "import requests; print('requests OK')"
+          java -version
+          wget --version | head -1
+
+      - name: Create old JAR fixture
+        run: |
+          mkdir -p /tmp/jar-nodex-old/com/example
+          cat > /tmp/jar-nodex-old/com/example/Foo.java << 'EOF'
+          package com.example;
+          public class Foo {
+            int x = 1;
+          }
+          EOF
+          cd /tmp/jar-nodex-old
+          javac com/example/Foo.java
+          jar cf /tmp/old-nodex.jar com/example/Foo.class
+          ls -la /tmp/old-nodex.jar
+
+      - name: Create new JAR fixture
+        run: |
+          mkdir -p /tmp/jar-nodex-new/com/example
+          cat > /tmp/jar-nodex-new/com/example/Foo.java << 'EOF'
+          package com.example;
+          public class Foo {
+            int x = 1;
+            int y = 2;
+          }
+          EOF
+          cat > /tmp/jar-nodex-new/com/example/Bar.java << 'EOF'
+          package com.example;
+          public class Bar {}
+          EOF
+          cd /tmp/jar-nodex-new
+          javac com/example/Foo.java com/example/Bar.java
+          jar cf /tmp/new-nodex.jar com/example/Foo.class com/example/Bar.class
+          ls -la /tmp/new-nodex.jar
+
+      - id: action
+        uses: .
+        with:
+          old-file-path: /tmp/old-nodex.jar
+          new-file-path: /tmp/new-nodex.jar
+          lib-version: "0.1.0"
+          diffuse-repo: JakeWharton/diffuse
+          old-mapping-path: ""
+          new-mapping-path: ""
+          debug: "false"
+
+      - name: Assert diff-gh-comment-no-dex is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.diff-gh-comment-no-dex }}
+        run: |
+          echo "actual diff-gh-comment-no-dex length: ${#ACTUAL}"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: diff-gh-comment-no-dex output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert diff-gh-comment-no-dex-all-collapsed is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.diff-gh-comment-no-dex-all-collapsed }}
+        run: |
+          echo "actual diff-gh-comment-no-dex-all-collapsed length: ${#ACTUAL}"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: diff-gh-comment-no-dex-all-collapsed output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert summary output is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.summary }}
+        run: |
+          echo "actual summary length: ${#ACTUAL}"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: summary output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert jar output is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.jar }}
+        run: |
+          echo "actual jar length: ${#ACTUAL}"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: jar output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert size diff comment contains arrow
+        env:
+          ACTUAL: ${{ steps.action.outputs.size-diff-comment_style_1 }}
+        run: |
+          echo "actual size-diff-comment_style_1: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: size-diff-comment_style_1 is empty"
+            exit 1
+          fi
+          if ! echo "$ACTUAL" | grep -q "\->"; then
+            echo "FAIL: size-diff-comment_style_1 does not contain '->': $ACTUAL"
+            exit 1
+          fi
+          echo "PASS"
