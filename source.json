@@ -1,6 +1,11 @@
 {
   "owner": "usefulness",
   "repo": "diffuse-action",
-  "version": "",
-  "url": "https://github.com/usefulness/diffuse-action"
+  "version": "v0.11.0",
+  "commit_sha": "41995fe8ff6be0a8847e63bdc5a4679c704b455c",
+  "url": "https://github.com/usefulness/diffuse-action",
+  "policy_sha": "d636be7e43ef829af6e853da6b3c7566db9f72fe",
+  "test_policy_sha": "843adf9e4b8f85d0c08b27b9d0b09dd094b54702",
+  "test_agent_version": "1",
+  "harden_agent_version": "1"
 }

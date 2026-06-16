@@ -1,0 +1,124 @@
+name: Test Diffuse Action - JAR comparison with mapping files
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Java
+        run: |
+          java -version || (apt-get update -qq && apt-get install -y -qq default-jdk)
+
+      - name: Create test JAR files and mapping files
+        run: |
+          mkdir -p /tmp/diffuse-mapping-test
+
+          # Create old JAR with a simple class
+          mkdir -p /tmp/old-mapping-classes
+          cat > /tmp/OldMappingHello.java << 'EOF'
+          public class OldMappingHello {
+              public static void main(String[] args) {
+                  System.out.println("Hello Old Mapping");
+              }
+          }
+          EOF
+          javac -d /tmp/old-mapping-classes /tmp/OldMappingHello.java
+          jar cf /tmp/diffuse-mapping-test/old.jar -C /tmp/old-mapping-classes .
+
+          # Create new JAR with a slightly different class
+          mkdir -p /tmp/new-mapping-classes
+          cat > /tmp/NewMappingHello.java << 'EOF'
+          public class NewMappingHello {
+              public static void main(String[] args) {
+                  System.out.println("Hello New Mapping");
+              }
+              public void extraMethod() {}
+          }
+          EOF
+          javac -d /tmp/new-mapping-classes /tmp/NewMappingHello.java
+          jar cf /tmp/diffuse-mapping-test/new.jar -C /tmp/new-mapping-classes .
+
+          # Create dummy ProGuard/R8 mapping files
+          cat > /tmp/diffuse-mapping-test/old-mapping.txt << 'EOF'
+          com.example.OldMappingHello -> a.a:
+              void main(java.lang.String[]) -> a
+          EOF
+
+          cat > /tmp/diffuse-mapping-test/new-mapping.txt << 'EOF'
+          com.example.NewMappingHello -> a.b:
+              void main(java.lang.String[]) -> a
+              void extraMethod() -> b
+          EOF
+
+          echo "Old JAR size: $(stat -c%s /tmp/diffuse-mapping-test/old.jar)"
+          echo "New JAR size: $(stat -c%s /tmp/diffuse-mapping-test/new.jar)"
+          echo "Old mapping size: $(stat -c%s /tmp/diffuse-mapping-test/old-mapping.txt)"
+          echo "New mapping size: $(stat -c%s /tmp/diffuse-mapping-test/new-mapping.txt)"
+
+      - id: action
+        uses: .
+        with:
+          old-file-path: /tmp/diffuse-mapping-test/old.jar
+          new-file-path: /tmp/diffuse-mapping-test/new.jar
+          old-mapping-path: /tmp/diffuse-mapping-test/old-mapping.txt
+          new-mapping-path: /tmp/diffuse-mapping-test/new-mapping.txt
+          lib-version: latest
+          diffuse-repo: usefulness/diffuse
+          debug: 'false'
+
+      - name: Assert size-old-bytes is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.size-old-bytes }}
+        run: |
+          echo "actual size-old-bytes: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: size-old-bytes output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert size-new-bytes is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.size-new-bytes }}
+        run: |
+          echo "actual size-new-bytes: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: size-new-bytes output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert diff-raw is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.diff-raw }}
+        run: |
+          echo "actual diff-raw length: ${#ACTUAL}"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: diff-raw output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert diff-gh-comment is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.diff-gh-comment }}
+        run: |
+          echo "actual diff-gh-comment length: ${#ACTUAL}"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: diff-gh-comment output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert summary is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.summary }}
+        run: |
+          echo "actual summary length: ${#ACTUAL}"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: summary output is empty"
+            exit 1
+          fi
+          echo "PASS"

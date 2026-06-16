@@ -1,0 +1,156 @@
+name: Test Diffuse Action - JAR basic comparison
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Java
+        run: |
+          java -version || (apt-get update -qq && apt-get install -y -qq default-jdk)
+
+      - name: Create test JAR files
+        run: |
+          mkdir -p /tmp/diffuse-test
+
+          # Create old JAR with a simple class
+          mkdir -p /tmp/old-classes/com/example
+          cat > /tmp/OldHello.java << 'EOF'
+          public class OldHello {
+              public static void main(String[] args) {
+                  System.out.println("Hello Old");
+              }
+          }
+          EOF
+          javac -d /tmp/old-classes /tmp/OldHello.java
+          jar cf /tmp/diffuse-test/old.jar -C /tmp/old-classes .
+
+          # Create new JAR with a slightly different class
+          mkdir -p /tmp/new-classes/com/example
+          cat > /tmp/NewHello.java << 'EOF'
+          public class NewHello {
+              public static void main(String[] args) {
+                  System.out.println("Hello New");
+              }
+              public void extraMethod() {}
+          }
+          EOF
+          javac -d /tmp/new-classes /tmp/NewHello.java
+          jar cf /tmp/diffuse-test/new.jar -C /tmp/new-classes .
+
+          echo "Old JAR size: $(stat -c%s /tmp/diffuse-test/old.jar)"
+          echo "New JAR size: $(stat -c%s /tmp/diffuse-test/new.jar)"
+
+      - id: action
+        uses: .
+        with:
+          old-file-path: /tmp/diffuse-test/old.jar
+          new-file-path: /tmp/diffuse-test/new.jar
+          lib-version: latest
+          diffuse-repo: usefulness/diffuse
+          debug: 'true'
+
+      - name: Assert size-old-bytes is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.size-old-bytes }}
+        run: |
+          echo "actual size-old-bytes: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: size-old-bytes output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert size-new-bytes is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.size-new-bytes }}
+        run: |
+          echo "actual size-new-bytes: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: size-new-bytes output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert size-old-text is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.size-old-text }}
+        run: |
+          echo "actual size-old-text: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: size-old-text output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert size-new-text is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.size-new-text }}
+        run: |
+          echo "actual size-new-text: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: size-new-text output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert size-diff-comment_style_1 is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.size-diff-comment_style_1 }}
+        run: |
+          echo "actual size-diff-comment_style_1: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: size-diff-comment_style_1 output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert diff-raw is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.diff-raw }}
+        run: |
+          echo "actual diff-raw length: ${#ACTUAL}"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: diff-raw output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert diff-file is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.diff-file }}
+        run: |
+          echo "actual diff-file: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: diff-file output is empty"
+            exit 1
+          fi
+          if [ ! -f "$ACTUAL" ]; then
+            echo "FAIL: diff-file path does not point to an existing file"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert diff-gh-comment is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.diff-gh-comment }}
+        run: |
+          echo "actual diff-gh-comment length: ${#ACTUAL}"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: diff-gh-comment output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert summary is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.summary }}
+        run: |
+          echo "actual summary length: ${#ACTUAL}"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: summary output is empty"
+            exit 1
+          fi
+          echo "PASS"

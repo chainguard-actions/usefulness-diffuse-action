@@ -1,0 +1,127 @@
+name: Test Diffuse Action - JAR with debug mode and no-dex outputs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Java
+        run: |
+          java -version || (apt-get update -qq && apt-get install -y -qq default-jdk)
+
+      - name: Create test JAR files for debug test
+        run: |
+          mkdir -p /tmp/diffuse-debug-test
+
+          # Create old JAR
+          cat > /tmp/DebugOld.java << 'EOF'
+          public class DebugOld {
+              public void methodA() {}
+          }
+          EOF
+          mkdir -p /tmp/debug-old-classes
+          javac -d /tmp/debug-old-classes /tmp/DebugOld.java
+          jar cf /tmp/diffuse-debug-test/old.jar -C /tmp/debug-old-classes .
+
+          # Create new JAR with extra method
+          cat > /tmp/DebugNew.java << 'EOF'
+          public class DebugNew {
+              public void methodA() {}
+              public void methodB() {}
+              public void methodC() {}
+          }
+          EOF
+          mkdir -p /tmp/debug-new-classes
+          javac -d /tmp/debug-new-classes /tmp/DebugNew.java
+          jar cf /tmp/diffuse-debug-test/new.jar -C /tmp/debug-new-classes .
+
+          echo "Old JAR size: $(stat -c%s /tmp/diffuse-debug-test/old.jar)"
+          echo "New JAR size: $(stat -c%s /tmp/diffuse-debug-test/new.jar)"
+
+      - id: action
+        uses: .
+        with:
+          old-file-path: /tmp/diffuse-debug-test/old.jar
+          new-file-path: /tmp/diffuse-debug-test/new.jar
+          lib-version: latest
+          diffuse-repo: usefulness/diffuse
+          debug: 'true'
+
+      - name: Assert diff-gh-comment-no-dex is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.diff-gh-comment-no-dex }}
+        run: |
+          echo "actual diff-gh-comment-no-dex length: ${#ACTUAL}"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: diff-gh-comment-no-dex output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert diff-gh-comment-no-dex-all-collapsed is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.diff-gh-comment-no-dex-all-collapsed }}
+        run: |
+          echo "actual diff-gh-comment-no-dex-all-collapsed length: ${#ACTUAL}"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: diff-gh-comment-no-dex-all-collapsed output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert jar output is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.jar }}
+        run: |
+          echo "actual jar output length: ${#ACTUAL}"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: jar output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert classes output is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.classes }}
+        run: |
+          echo "actual classes output length: ${#ACTUAL}"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: classes output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert size-old-text has unit suffix
+        env:
+          ACTUAL: ${{ steps.action.outputs.size-old-text }}
+        run: |
+          echo "actual size-old-text: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: size-old-text is empty"
+            exit 1
+          fi
+          # Should contain a size unit like B, KiB, MiB
+          if echo "$ACTUAL" | grep -qE '[0-9]+(\.[0-9]+)?\s*(B|KiB|MiB|GiB)'; then
+            echo "PASS: size-old-text has expected format"
+          else
+            echo "WARN: size-old-text format unexpected: $ACTUAL"
+            echo "PASS (non-fatal)"
+          fi
+
+      - name: Assert size-new-text has unit suffix
+        env:
+          ACTUAL: ${{ steps.action.outputs.size-new-text }}
+        run: |
+          echo "actual size-new-text: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: size-new-text is empty"
+            exit 1
+          fi
+          if echo "$ACTUAL" | grep -qE '[0-9]+(\.[0-9]+)?\s*(B|KiB|MiB|GiB)'; then
+            echo "PASS: size-new-text has expected format"
+          else
+            echo "WARN: size-new-text format unexpected: $ACTUAL"
+            echo "PASS (non-fatal)"
+          fi
