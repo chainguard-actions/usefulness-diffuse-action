@@ -1,4 +1,4 @@
-name: Test Diffuse Action - JAR comparison with mapping files
+name: Test Diffuse Action - JAR with mapping files
 on:
   workflow_dispatch:
 jobs:
@@ -16,46 +16,48 @@ jobs:
           mkdir -p /tmp/diffuse-mapping-test
 
           # Create old JAR with a simple class
-          mkdir -p /tmp/old-mapping-classes
-          cat > /tmp/OldMappingHello.java << 'EOF'
-          public class OldMappingHello {
+          mkdir -p /tmp/old-map-classes
+          cat > /tmp/OldMappedHello.java << 'EOF'
+          public class OldMappedHello {
               public static void main(String[] args) {
-                  System.out.println("Hello Old Mapping");
+                  System.out.println("Hello Old Mapped");
               }
           }
           EOF
-          javac -d /tmp/old-mapping-classes /tmp/OldMappingHello.java
-          jar cf /tmp/diffuse-mapping-test/old.jar -C /tmp/old-mapping-classes .
+          javac -d /tmp/old-map-classes /tmp/OldMappedHello.java
+          jar cf /tmp/diffuse-mapping-test/old.jar -C /tmp/old-map-classes .
 
           # Create new JAR with a slightly different class
-          mkdir -p /tmp/new-mapping-classes
-          cat > /tmp/NewMappingHello.java << 'EOF'
-          public class NewMappingHello {
+          mkdir -p /tmp/new-map-classes
+          cat > /tmp/NewMappedHello.java << 'EOF'
+          public class NewMappedHello {
               public static void main(String[] args) {
-                  System.out.println("Hello New Mapping");
+                  System.out.println("Hello New Mapped");
               }
               public void extraMethod() {}
           }
           EOF
-          javac -d /tmp/new-mapping-classes /tmp/NewMappingHello.java
-          jar cf /tmp/diffuse-mapping-test/new.jar -C /tmp/new-mapping-classes .
+          javac -d /tmp/new-map-classes /tmp/NewMappedHello.java
+          jar cf /tmp/diffuse-mapping-test/new.jar -C /tmp/new-map-classes .
 
-          # Create dummy ProGuard/R8 mapping files
+          # Create minimal ProGuard-style mapping files
           cat > /tmp/diffuse-mapping-test/old-mapping.txt << 'EOF'
-          com.example.OldMappingHello -> a.a:
+          OldMappedHello -> a:
               void main(java.lang.String[]) -> a
           EOF
 
           cat > /tmp/diffuse-mapping-test/new-mapping.txt << 'EOF'
-          com.example.NewMappingHello -> a.b:
+          NewMappedHello -> b:
               void main(java.lang.String[]) -> a
               void extraMethod() -> b
           EOF
 
           echo "Old JAR size: $(stat -c%s /tmp/diffuse-mapping-test/old.jar)"
           echo "New JAR size: $(stat -c%s /tmp/diffuse-mapping-test/new.jar)"
-          echo "Old mapping size: $(stat -c%s /tmp/diffuse-mapping-test/old-mapping.txt)"
-          echo "New mapping size: $(stat -c%s /tmp/diffuse-mapping-test/new-mapping.txt)"
+          echo "Old mapping:"
+          cat /tmp/diffuse-mapping-test/old-mapping.txt
+          echo "New mapping:"
+          cat /tmp/diffuse-mapping-test/new-mapping.txt
 
       - id: action
         uses: .
@@ -101,13 +103,17 @@ jobs:
           fi
           echo "PASS"
 
-      - name: Assert diff-gh-comment is set
+      - name: Assert diff-file is set and exists
         env:
-          ACTUAL: ${{ steps.action.outputs.diff-gh-comment }}
+          ACTUAL: ${{ steps.action.outputs.diff-file }}
         run: |
-          echo "actual diff-gh-comment length: ${#ACTUAL}"
+          echo "actual diff-file: $ACTUAL"
           if [ -z "$ACTUAL" ]; then
-            echo "FAIL: diff-gh-comment output is empty"
+            echo "FAIL: diff-file output is empty"
+            exit 1
+          fi
+          if [ ! -f "$ACTUAL" ]; then
+            echo "FAIL: diff-file path does not point to an existing file"
             exit 1
           fi
           echo "PASS"
@@ -119,6 +125,17 @@ jobs:
           echo "actual summary length: ${#ACTUAL}"
           if [ -z "$ACTUAL" ]; then
             echo "FAIL: summary output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert size-diff-comment_style_1 is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.size-diff-comment_style_1 }}
+        run: |
+          echo "actual size-diff-comment_style_1: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: size-diff-comment_style_1 output is empty"
             exit 1
           fi
           echo "PASS"

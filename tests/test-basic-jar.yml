@@ -1,0 +1,154 @@
+name: Test basic JAR comparison
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Java (required for diffuse JAR)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq default-jre-headless
+
+      - name: Create test JAR files
+        run: |
+          # Create two minimal valid JAR files (ZIP format with a manifest)
+          mkdir -p /tmp/test-jars
+
+          # Create old JAR - a minimal valid JAR with a manifest
+          mkdir -p /tmp/old-jar/META-INF
+          printf "Manifest-Version: 1.0\nMain-Class: com.example.Main\n\n" > /tmp/old-jar/META-INF/MANIFEST.MF
+          echo "old content" > /tmp/old-jar/OldClass.txt
+          cd /tmp/old-jar && zip -r /tmp/test-jars/old.jar . && cd -
+
+          # Create new JAR - slightly different to produce a diff
+          mkdir -p /tmp/new-jar/META-INF
+          printf "Manifest-Version: 1.0\nMain-Class: com.example.Main\n\n" > /tmp/new-jar/META-INF/MANIFEST.MF
+          echo "old content" > /tmp/new-jar/OldClass.txt
+          echo "new content" > /tmp/new-jar/NewClass.txt
+          cd /tmp/new-jar && zip -r /tmp/test-jars/new.jar . && cd -
+
+          echo "Old JAR size: $(stat -c%s /tmp/test-jars/old.jar) bytes"
+          echo "New JAR size: $(stat -c%s /tmp/test-jars/new.jar) bytes"
+
+      - id: action
+        uses: .
+        with:
+          old-file-path: /tmp/test-jars/old.jar
+          new-file-path: /tmp/test-jars/new.jar
+          lib-version: latest
+          diffuse-repo: usefulness/diffuse
+          debug: 'true'
+
+      - name: Assert size-old-bytes is set and numeric
+        env:
+          ACTUAL: ${{ steps.action.outputs.size-old-bytes }}
+        run: |
+          echo "actual size-old-bytes: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: size-old-bytes is empty"
+            exit 1
+          fi
+          if ! echo "$ACTUAL" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: size-old-bytes is not numeric: $ACTUAL"
+            exit 1
+          fi
+          echo "PASS: size-old-bytes=$ACTUAL"
+
+      - name: Assert size-new-bytes is set and numeric
+        env:
+          ACTUAL: ${{ steps.action.outputs.size-new-bytes }}
+        run: |
+          echo "actual size-new-bytes: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: size-new-bytes is empty"
+            exit 1
+          fi
+          if ! echo "$ACTUAL" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: size-new-bytes is not numeric: $ACTUAL"
+            exit 1
+          fi
+          echo "PASS: size-new-bytes=$ACTUAL"
+
+      - name: Assert size-old-text is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.size-old-text }}
+        run: |
+          echo "actual size-old-text: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: size-old-text is empty"
+            exit 1
+          fi
+          echo "PASS: size-old-text=$ACTUAL"
+
+      - name: Assert size-new-text is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.size-new-text }}
+        run: |
+          echo "actual size-new-text: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: size-new-text is empty"
+            exit 1
+          fi
+          echo "PASS: size-new-text=$ACTUAL"
+
+      - name: Assert size-diff-comment_style_1 is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.size-diff-comment_style_1 }}
+        run: |
+          echo "actual size-diff-comment_style_1: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: size-diff-comment_style_1 is empty"
+            exit 1
+          fi
+          echo "PASS: size-diff-comment_style_1=$ACTUAL"
+
+      - name: Assert diff-raw is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.diff-raw }}
+        run: |
+          echo "actual diff-raw length: ${#ACTUAL}"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: diff-raw is empty"
+            exit 1
+          fi
+          echo "PASS: diff-raw is non-empty"
+
+      - name: Assert diff-file path is set and exists
+        env:
+          ACTUAL: ${{ steps.action.outputs.diff-file }}
+        run: |
+          echo "actual diff-file: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: diff-file is empty"
+            exit 1
+          fi
+          if [ ! -f "$ACTUAL" ]; then
+            echo "FAIL: diff-file path does not exist: $ACTUAL"
+            exit 1
+          fi
+          echo "PASS: diff-file=$ACTUAL"
+
+      - name: Assert diff-gh-comment is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.diff-gh-comment }}
+        run: |
+          echo "actual diff-gh-comment length: ${#ACTUAL}"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: diff-gh-comment is empty"
+            exit 1
+          fi
+          echo "PASS: diff-gh-comment is non-empty"
+
+      - name: Assert summary output is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.summary }}
+        run: |
+          echo "actual summary length: ${#ACTUAL}"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: summary is empty"
+            exit 1
+          fi
+          echo "PASS: summary is non-empty"

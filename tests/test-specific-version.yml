@@ -1,0 +1,126 @@
+name: Test specific lib-version input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Java (required for diffuse JAR)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq default-jre-headless
+
+      - name: Create test JAR files with size difference
+        run: |
+          mkdir -p /tmp/test-jars-version
+
+          # Create old (smaller) JAR
+          mkdir -p /tmp/old-v-jar/META-INF
+          printf "Manifest-Version: 1.0\n\n" > /tmp/old-v-jar/META-INF/MANIFEST.MF
+          echo "small content" > /tmp/old-v-jar/Small.txt
+          cd /tmp/old-v-jar && zip -r /tmp/test-jars-version/old.jar . && cd -
+
+          # Create new (larger) JAR with more content
+          mkdir -p /tmp/new-v-jar/META-INF
+          printf "Manifest-Version: 1.0\n\n" > /tmp/new-v-jar/META-INF/MANIFEST.MF
+          echo "small content" > /tmp/new-v-jar/Small.txt
+          # Add extra content to make it larger
+          python3 -c "print('x' * 1000)" > /tmp/new-v-jar/Extra.txt
+          cd /tmp/new-v-jar && zip -r /tmp/test-jars-version/new.jar . && cd -
+
+          echo "Old JAR size: $(stat -c%s /tmp/test-jars-version/old.jar) bytes"
+          echo "New JAR size: $(stat -c%s /tmp/test-jars-version/new.jar) bytes"
+
+      - id: action
+        uses: .
+        with:
+          old-file-path: /tmp/test-jars-version/old.jar
+          new-file-path: /tmp/test-jars-version/new.jar
+          lib-version: '0.3.0'
+          diffuse-repo: usefulness/diffuse
+
+      - name: Assert size-old-bytes is numeric and positive
+        env:
+          ACTUAL: ${{ steps.action.outputs.size-old-bytes }}
+        run: |
+          echo "actual size-old-bytes: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: size-old-bytes is empty"
+            exit 1
+          fi
+          if ! echo "$ACTUAL" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: size-old-bytes is not a positive integer: $ACTUAL"
+            exit 1
+          fi
+          if [ "$ACTUAL" -le 0 ]; then
+            echo "FAIL: size-old-bytes should be > 0, got: $ACTUAL"
+            exit 1
+          fi
+          echo "PASS: size-old-bytes=$ACTUAL"
+
+      - name: Assert size-new-bytes is larger than size-old-bytes
+        env:
+          OLD_BYTES: ${{ steps.action.outputs.size-old-bytes }}
+          NEW_BYTES: ${{ steps.action.outputs.size-new-bytes }}
+        run: |
+          echo "size-old-bytes: $OLD_BYTES"
+          echo "size-new-bytes: $NEW_BYTES"
+          if [ -z "$OLD_BYTES" ] || [ -z "$NEW_BYTES" ]; then
+            echo "FAIL: size outputs are empty"
+            exit 1
+          fi
+          if [ "$NEW_BYTES" -le "$OLD_BYTES" ]; then
+            echo "FAIL: expected new ($NEW_BYTES) > old ($OLD_BYTES)"
+            exit 1
+          fi
+          echo "PASS: new ($NEW_BYTES) > old ($OLD_BYTES)"
+
+      - name: Assert size-diff-comment_style_1 shows positive diff
+        env:
+          ACTUAL: ${{ steps.action.outputs.size-diff-comment_style_1 }}
+        run: |
+          echo "actual size-diff-comment_style_1: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: size-diff-comment_style_1 is empty"
+            exit 1
+          fi
+          # Should contain a '+' sign since new is larger
+          if ! echo "$ACTUAL" | grep -q '+'; then
+            echo "FAIL: expected positive diff ('+') in: $ACTUAL"
+            exit 1
+          fi
+          echo "PASS: positive diff detected: $ACTUAL"
+
+      - name: Assert diff-file exists on disk
+        env:
+          ACTUAL: ${{ steps.action.outputs.diff-file }}
+        run: |
+          echo "actual diff-file: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: diff-file output is empty"
+            exit 1
+          fi
+          if [ ! -f "$ACTUAL" ]; then
+            echo "FAIL: diff-file does not exist at path: $ACTUAL"
+            exit 1
+          fi
+          FILE_SIZE=$(stat -c%s "$ACTUAL")
+          echo "diff-file size: $FILE_SIZE bytes"
+          if [ "$FILE_SIZE" -eq 0 ]; then
+            echo "FAIL: diff-file is empty"
+            exit 1
+          fi
+          echo "PASS: diff-file exists and is non-empty"
+
+      - name: Assert jar output is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.jar }}
+        run: |
+          echo "actual jar output length: ${#ACTUAL}"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: jar output is empty"
+            exit 1
+          fi
+          echo "PASS: jar output is non-empty"

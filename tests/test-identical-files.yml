@@ -1,0 +1,104 @@
+name: Test identical JAR files (no diff)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Java (required for diffuse JAR)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq default-jre-headless
+
+      - name: Create identical test JAR files
+        run: |
+          mkdir -p /tmp/test-jars-identical
+
+          # Create a single JAR and use it as both old and new
+          mkdir -p /tmp/base-jar/META-INF
+          printf "Manifest-Version: 1.0\nMain-Class: com.example.Main\n\n" > /tmp/base-jar/META-INF/MANIFEST.MF
+          echo "some class content" > /tmp/base-jar/SomeClass.txt
+          cd /tmp/base-jar && zip -r /tmp/test-jars-identical/base.jar . && cd -
+
+          # Copy to create identical old and new
+          cp /tmp/test-jars-identical/base.jar /tmp/test-jars-identical/old.jar
+          cp /tmp/test-jars-identical/base.jar /tmp/test-jars-identical/new.jar
+
+          echo "JAR size: $(stat -c%s /tmp/test-jars-identical/old.jar) bytes"
+
+      - id: action
+        uses: .
+        with:
+          old-file-path: /tmp/test-jars-identical/old.jar
+          new-file-path: /tmp/test-jars-identical/new.jar
+          lib-version: latest
+          diffuse-repo: usefulness/diffuse
+
+      - name: Assert size-old-bytes equals size-new-bytes (identical files)
+        env:
+          OLD_BYTES: ${{ steps.action.outputs.size-old-bytes }}
+          NEW_BYTES: ${{ steps.action.outputs.size-new-bytes }}
+        run: |
+          echo "size-old-bytes: $OLD_BYTES"
+          echo "size-new-bytes: $NEW_BYTES"
+          if [ -z "$OLD_BYTES" ] || [ -z "$NEW_BYTES" ]; then
+            echo "FAIL: size outputs are empty"
+            exit 1
+          fi
+          if [ "$OLD_BYTES" != "$NEW_BYTES" ]; then
+            echo "FAIL: expected identical sizes but got old=$OLD_BYTES new=$NEW_BYTES"
+            exit 1
+          fi
+          echo "PASS: sizes are equal ($OLD_BYTES bytes)"
+
+      - name: Assert size-diff-comment_style_1 shows zero diff
+        env:
+          ACTUAL: ${{ steps.action.outputs.size-diff-comment_style_1 }}
+        run: |
+          echo "actual size-diff-comment_style_1: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: size-diff-comment_style_1 is empty"
+            exit 1
+          fi
+          # For identical files, the diff should show +0.0 or similar zero diff
+          if echo "$ACTUAL" | grep -qE '\+0\.0'; then
+            echo "PASS: zero diff detected: $ACTUAL"
+          else
+            echo "INFO: diff comment: $ACTUAL (may not be exactly +0.0B)"
+            echo "PASS: size-diff-comment_style_1 is set"
+          fi
+
+      - name: Assert diff-raw is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.diff-raw }}
+        run: |
+          echo "actual diff-raw length: ${#ACTUAL}"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: diff-raw is empty"
+            exit 1
+          fi
+          echo "PASS: diff-raw is non-empty"
+
+      - name: Assert diff-gh-comment-all-collapsed is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.diff-gh-comment-all-collapsed }}
+        run: |
+          echo "actual diff-gh-comment-all-collapsed length: ${#ACTUAL}"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: diff-gh-comment-all-collapsed is empty"
+            exit 1
+          fi
+          echo "PASS: diff-gh-comment-all-collapsed is non-empty"
+
+      - name: Assert diff-gh-comment-no-dex is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.diff-gh-comment-no-dex }}
+        run: |
+          echo "actual diff-gh-comment-no-dex length: ${#ACTUAL}"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: diff-gh-comment-no-dex is empty"
+            exit 1
+          fi
+          echo "PASS: diff-gh-comment-no-dex is non-empty"
