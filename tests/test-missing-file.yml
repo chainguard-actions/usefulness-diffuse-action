@@ -1,0 +1,41 @@
+name: Test error on missing old file
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Ensure python venv is available
+        run: |
+          SUDO=""
+          if [ "$(id -u)" != "0" ]; then SUDO="sudo"; fi
+          if ! python3 -m venv /tmp/venv-check >/dev/null 2>&1; then
+            $SUDO apt-get update -y
+            DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y python3-venv
+          fi
+      - name: Create only the new file
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/diffuse-missing"
+          printf 'PK\005\006%018d' 0 > "$GITHUB_WORKSPACE/diffuse-missing/new.jar"
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          old-file-path: ${{ github.workspace }}/diffuse-missing/does-not-exist.jar
+          new-file-path: ${{ github.workspace }}/diffuse-missing/new.jar
+      - name: Assert action failed
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          DIFF_RAW: ${{ steps.action.outputs.diff-raw }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "FAIL: expected failure for missing old file"
+            exit 1
+          fi
+          if [ -n "$DIFF_RAW" ]; then
+            echo "FAIL: diff-raw should be empty on failure"
+            exit 1
+          fi
+          echo "PASS"

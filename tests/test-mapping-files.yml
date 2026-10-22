@@ -1,0 +1,89 @@
+name: Test jar diff with mapping files
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Ensure Java 17+ and python venv are available
+        run: |
+          SUDO=""
+          if [ "$(id -u)" != "0" ]; then SUDO="sudo"; fi
+          need_java=1
+          if command -v javac >/dev/null 2>&1 && command -v jar >/dev/null 2>&1; then
+            ver="$(javac -version 2>&1 | sed -E 's/^javac ([0-9]+).*/\1/')"
+            if [ "${ver:-0}" -ge 17 ] 2>/dev/null; then need_java=0; fi
+          fi
+          need_venv=0
+          python3 -m venv /tmp/venv-check >/dev/null 2>&1 || need_venv=1
+          if [ "$need_java" = 1 ] || [ "$need_venv" = 1 ]; then
+            $SUDO apt-get update -y
+            pkgs=""
+            [ "$need_java" = 1 ] && pkgs="$pkgs openjdk-17-jdk-headless"
+            [ "$need_venv" = 1 ] && pkgs="$pkgs python3-venv"
+            DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y $pkgs
+          fi
+          java -version
+          python3 --version
+      - name: Build old and new jars plus mapping files
+        run: |
+          set -e
+          W="$GITHUB_WORKSPACE/diffuse-mapping-test"
+          rm -rf "$W"; mkdir -p "$W/old/src/com/example" "$W/new/src/com/example"
+          cat > "$W/old/src/com/example/Hello.java" <<'EOF'
+          package com.example;
+          public class Hello {
+            public String greet() { return "hi"; }
+          }
+          EOF
+          cat > "$W/new/src/com/example/Hello.java" <<'EOF'
+          package com.example;
+          public class Hello {
+            public String greet() { return "hello"; }
+            public int add(int a, int b) { return a + b; }
+          }
+          EOF
+          for v in old new; do
+            mkdir -p "$W/$v/classes"
+            javac --release 8 -d "$W/$v/classes" $(find "$W/$v/src" -name '*.java') 2>/dev/null || \
+              javac -d "$W/$v/classes" $(find "$W/$v/src" -name '*.java')
+            (cd "$W/$v/classes" && jar cf "$W/$v.jar" .)
+          done
+          printf '%s\n' \
+            'com.example.Hello -> com.example.Hello:' \
+            '    java.lang.String greet() -> greet' > "$W/old-mapping.txt"
+          printf '%s\n' \
+            'com.example.Hello -> com.example.Hello:' \
+            '    java.lang.String greet() -> greet' \
+            '    int add(int,int) -> add' > "$W/new-mapping.txt"
+          ls -l "$W"
+      - id: action
+        uses: .
+        with:
+          old-file-path: ${{ github.workspace }}/diffuse-mapping-test/old.jar
+          new-file-path: ${{ github.workspace }}/diffuse-mapping-test/new.jar
+          old-mapping-path: ${{ github.workspace }}/diffuse-mapping-test/old-mapping.txt
+          new-mapping-path: ${{ github.workspace }}/diffuse-mapping-test/new-mapping.txt
+          debug: 'true'
+      - name: Assert outputs
+        env:
+          OLD_BYTES: ${{ steps.action.outputs.size-old-bytes }}
+          NEW_BYTES: ${{ steps.action.outputs.size-new-bytes }}
+          DIFF_RAW: ${{ steps.action.outputs.diff-raw }}
+          DIFF_FILE: ${{ steps.action.outputs.diff-file }}
+          SUMMARY: ${{ steps.action.outputs.summary }}
+        run: |
+          W="$GITHUB_WORKSPACE/diffuse-mapping-test"
+          exp_old=$(stat -c %s "$W/old.jar")
+          exp_new=$(stat -c %s "$W/new.jar")
+          echo "old bytes: $OLD_BYTES (expected $exp_old)"
+          echo "new bytes: $NEW_BYTES (expected $exp_new)"
+          echo "diff-file: $DIFF_FILE"
+          echo "summary:"; echo "$SUMMARY"
+          [ "$OLD_BYTES" = "$exp_old" ] || { echo "FAIL: size-old-bytes"; exit 1; }
+          [ "$NEW_BYTES" = "$exp_new" ] || { echo "FAIL: size-new-bytes"; exit 1; }
+          [ -n "$DIFF_RAW" ] || { echo "FAIL: diff-raw empty"; exit 1; }
+          [ -n "$DIFF_FILE" ] && [ -s "$DIFF_FILE" ] || { echo "FAIL: diff-file missing/empty"; exit 1; }
+          [ -n "$SUMMARY" ] || { echo "FAIL: summary empty"; exit 1; }
+          echo "PASS"

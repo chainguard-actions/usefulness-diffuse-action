@@ -1,0 +1,70 @@
+name: Test identical jars with debug enabled
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Ensure Java 17+ and python venv are available
+        run: |
+          SUDO=""
+          if [ "$(id -u)" != "0" ]; then SUDO="sudo"; fi
+          need_java=1
+          if command -v javac >/dev/null 2>&1 && command -v jar >/dev/null 2>&1; then
+            ver="$(javac -version 2>&1 | sed -E 's/^javac ([0-9]+).*/\1/')"
+            if [ "${ver:-0}" -ge 17 ] 2>/dev/null; then need_java=0; fi
+          fi
+          need_venv=0
+          python3 -m venv /tmp/venv-check >/dev/null 2>&1 || need_venv=1
+          if [ "$need_java" = 1 ] || [ "$need_venv" = 1 ]; then
+            $SUDO apt-get update -y
+            pkgs=""
+            [ "$need_java" = 1 ] && pkgs="$pkgs openjdk-17-jdk-headless"
+            [ "$need_venv" = 1 ] && pkgs="$pkgs python3-venv"
+            DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y $pkgs
+          fi
+          java -version
+      - name: Build a jar and an identical copy
+        run: |
+          set -e
+          W="$GITHUB_WORKSPACE/diffuse-same"
+          rm -rf "$W"; mkdir -p "$W/src/com/example" "$W/classes"
+          cat > "$W/src/com/example/Same.java" <<'EOF'
+          package com.example;
+          public class Same {
+            public String value() { return "same"; }
+          }
+          EOF
+          javac --release 8 -d "$W/classes" "$W/src/com/example/Same.java" 2>/dev/null || \
+            javac -d "$W/classes" "$W/src/com/example/Same.java"
+          (cd "$W/classes" && jar cf "$W/a.jar" .)
+          cp "$W/a.jar" "$W/b.jar"
+      - id: action
+        uses: .
+        with:
+          old-file-path: ${{ github.workspace }}/diffuse-same/a.jar
+          new-file-path: ${{ github.workspace }}/diffuse-same/b.jar
+          lib-version: latest
+          diffuse-repo: usefulness/diffuse
+          debug: 'true'
+      - name: Assert sizes equal and zero diff
+        env:
+          OLD_BYTES: ${{ steps.action.outputs.size-old-bytes }}
+          NEW_BYTES: ${{ steps.action.outputs.size-new-bytes }}
+          OLD_TEXT: ${{ steps.action.outputs.size-old-text }}
+          DIFF_COMMENT: ${{ steps.action.outputs.size-diff-comment_style_1 }}
+          DIFF_FILE: ${{ steps.action.outputs.diff-file }}
+          SUMMARY: ${{ steps.action.outputs.summary }}
+        run: |
+          echo "old=$OLD_BYTES new=$NEW_BYTES comment=$DIFF_COMMENT"
+          echo "summary:"; echo "$SUMMARY"
+          exp=$(stat -c %s "$GITHUB_WORKSPACE/diffuse-same/a.jar")
+          [ "$OLD_BYTES" = "$exp" ] && [ "$NEW_BYTES" = "$exp" ] || { echo "FAIL: sizes mismatch"; exit 1; }
+          if [ "$DIFF_COMMENT" != "**+0.0B** ($OLD_TEXT -> $OLD_TEXT)" ]; then
+            echo "FAIL: expected '**+0.0B** ($OLD_TEXT -> $OLD_TEXT)'"
+            exit 1
+          fi
+          [ -f "$DIFF_FILE" ] || { echo "FAIL: diff-file missing"; exit 1; }
+          [ -n "$SUMMARY" ] || { echo "FAIL: summary empty"; exit 1; }
+          echo "PASS"

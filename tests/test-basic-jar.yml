@@ -1,0 +1,107 @@
+name: Test basic jar diff
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Ensure Java 17+ and python venv are available
+        run: |
+          SUDO=""
+          if [ "$(id -u)" != "0" ]; then SUDO="sudo"; fi
+          need_java=1
+          if command -v javac >/dev/null 2>&1 && command -v jar >/dev/null 2>&1; then
+            ver="$(javac -version 2>&1 | sed -E 's/^javac ([0-9]+).*/\1/')"
+            if [ "${ver:-0}" -ge 17 ] 2>/dev/null; then need_java=0; fi
+          fi
+          need_venv=0
+          python3 -m venv /tmp/venv-check >/dev/null 2>&1 || need_venv=1
+          if [ "$need_java" = 1 ] || [ "$need_venv" = 1 ]; then
+            $SUDO apt-get update -y
+            pkgs=""
+            [ "$need_java" = 1 ] && pkgs="$pkgs openjdk-17-jdk-headless"
+            [ "$need_venv" = 1 ] && pkgs="$pkgs python3-venv"
+            DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y $pkgs
+          fi
+          java -version
+          python3 --version
+      - name: Build old and new jars
+        run: |
+          set -e
+          W="$GITHUB_WORKSPACE/diffuse-test"
+          rm -rf "$W"; mkdir -p "$W/old/src/com/example" "$W/new/src/com/example"
+          cat > "$W/old/src/com/example/Hello.java" <<'EOF'
+          package com.example;
+          public class Hello {
+            public String greet() { return "hi"; }
+          }
+          EOF
+          cat > "$W/new/src/com/example/Hello.java" <<'EOF'
+          package com.example;
+          public class Hello {
+            public String greet() { return "hello"; }
+            public int add(int a, int b) { return a + b; }
+          }
+          EOF
+          cat > "$W/new/src/com/example/Extra.java" <<'EOF'
+          package com.example;
+          public class Extra {
+            public String name() { return "extra"; }
+          }
+          EOF
+          for v in old new; do
+            mkdir -p "$W/$v/classes"
+            javac --release 8 -d "$W/$v/classes" $(find "$W/$v/src" -name '*.java') 2>/dev/null || \
+              javac -d "$W/$v/classes" $(find "$W/$v/src" -name '*.java')
+            (cd "$W/$v/classes" && jar cf "$W/$v.jar" .)
+          done
+          ls -l "$W"/*.jar
+      - id: action
+        uses: .
+        with:
+          old-file-path: ${{ github.workspace }}/diffuse-test/old.jar
+          new-file-path: ${{ github.workspace }}/diffuse-test/new.jar
+      - name: Assert size outputs
+        env:
+          OLD_BYTES: ${{ steps.action.outputs.size-old-bytes }}
+          NEW_BYTES: ${{ steps.action.outputs.size-new-bytes }}
+          OLD_TEXT: ${{ steps.action.outputs.size-old-text }}
+          NEW_TEXT: ${{ steps.action.outputs.size-new-text }}
+          DIFF_COMMENT: ${{ steps.action.outputs.size-diff-comment_style_1 }}
+        run: |
+          W="$GITHUB_WORKSPACE/diffuse-test"
+          exp_old=$(stat -c %s "$W/old.jar")
+          exp_new=$(stat -c %s "$W/new.jar")
+          echo "old bytes: $OLD_BYTES (expected $exp_old)"
+          echo "new bytes: $NEW_BYTES (expected $exp_new)"
+          echo "old text: $OLD_TEXT, new text: $NEW_TEXT"
+          echo "diff comment: $DIFF_COMMENT"
+          [ "$OLD_BYTES" = "$exp_old" ] || { echo "FAIL: size-old-bytes"; exit 1; }
+          [ "$NEW_BYTES" = "$exp_new" ] || { echo "FAIL: size-new-bytes"; exit 1; }
+          [ -n "$OLD_TEXT" ] && [ -n "$NEW_TEXT" ] || { echo "FAIL: size text empty"; exit 1; }
+          case "$DIFF_COMMENT" in
+            "**"*"** ($OLD_TEXT -> $NEW_TEXT)") ;;
+            *) echo "FAIL: unexpected diff comment format"; exit 1 ;;
+          esac
+          echo "PASS"
+      - name: Assert diff outputs
+        env:
+          DIFF_RAW: ${{ steps.action.outputs.diff-raw }}
+          DIFF_FILE: ${{ steps.action.outputs.diff-file }}
+          SUMMARY: ${{ steps.action.outputs.summary }}
+          COMMENT: ${{ steps.action.outputs.diff-gh-comment }}
+          COMMENT_COLLAPSED: ${{ steps.action.outputs.diff-gh-comment-all-collapsed }}
+          COMMENT_NO_DEX: ${{ steps.action.outputs.diff-gh-comment-no-dex }}
+        run: |
+          echo "diff-file: $DIFF_FILE"
+          echo "summary:"; echo "$SUMMARY"
+          echo "diff-raw (head):"; echo "$DIFF_RAW" | head -40
+          [ -n "$DIFF_RAW" ] || { echo "FAIL: diff-raw empty"; exit 1; }
+          [ -n "$DIFF_FILE" ] && [ -f "$DIFF_FILE" ] || { echo "FAIL: diff-file missing"; exit 1; }
+          [ -s "$DIFF_FILE" ] || { echo "FAIL: diff-file empty"; exit 1; }
+          [ -n "$SUMMARY" ] || { echo "FAIL: summary empty"; exit 1; }
+          [ -n "$COMMENT" ] || { echo "FAIL: diff-gh-comment empty"; exit 1; }
+          echo "$COMMENT_COLLAPSED" | grep -q "<details>" || { echo "FAIL: collapsed comment has no <details>"; exit 1; }
+          [ -n "$COMMENT_NO_DEX" ] || { echo "FAIL: diff-gh-comment-no-dex empty"; exit 1; }
+          echo "PASS"
