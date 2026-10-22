@@ -10,6 +10,7 @@ Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at
 |---------|-----|-----------------|
 | v0.11.0 | [`v0.11.0`](https://github.com/chainguard-actions/usefulness-diffuse-action/tree/v0.11.0) | [`41995fe`](https://github.com/usefulness/diffuse-action/commit/41995fe8ff6be0a8847e63bdc5a4679c704b455c) |
 | v0.8.0 | [`v0.8.0`](https://github.com/chainguard-actions/usefulness-diffuse-action/tree/v0.8.0) | [`7d354d2`](https://github.com/usefulness/diffuse-action/commit/7d354d27a3d646439248e5f2fa9b8f791cce3b45) |
+| v1 | [`v1`](https://github.com/chainguard-actions/usefulness-diffuse-action/tree/v1) | [`41995fe`](https://github.com/usefulness/diffuse-action/commit/41995fe8ff6be0a8847e63bdc5a4679c704b455c) |
 
 ## Privacy
 
